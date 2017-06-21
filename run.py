@@ -19,6 +19,9 @@ credentials = (os.getenv('USER'), os.getenv('PASSWORD'))
 url = os.getenv('URL')+'/api/status/5a-kafka'
 expectedBrokers = int(os.getenv('LIVE_BROKERS', '3'))
 alertChannel = os.getenv("SLACK_ALERT_CHANNEL")
+scheduler = BlockingScheduler({'apscheduler.timezone': 'UTC'})
+global jobDelayed
+jobDelayed = False
 
 def healthChecker():
     liveBrokers = liveBrokersCheck(url, credentials)
@@ -31,6 +34,14 @@ def healthChecker():
     send = liveBrokers['sendAlert'] or  underReplicatedTopics['sendAlert'] or unavailableTopics['sendAlert']
     if(send):
         sendAlert(alertText)
+        scheduler.reschedule_job('healthChecker', trigger='interval', seconds=300)
+        jobDelayed = True
+    else:
+        if(jobDelayed):
+            sendAlert('Back to normal :beauty:')
+            scheduler.reschedule_job('healthChecker', trigger='interval', seconds=20)
+            jobDelayed = False
+
 
 def liveBrokersCheck(url, credentials):
     alertDict = { 'text': '', 'sendAlert': False }
@@ -89,6 +100,7 @@ def unavailablePartitionsCheck(topics, url, credentials):
 
 def sendAlert(alertText):
     sc = SlackClient(slack_token)
+    LOGGER.info('Alert sent: ' + alertText)
     sc.api_call(
       "chat.postMessage",
       channel=alertChannel,
@@ -97,8 +109,7 @@ def sendAlert(alertText):
 
 if __name__ == '__main__':
     LOGGER = logging.getLogger(__name__)
-    scheduler = BlockingScheduler({'apscheduler.timezone': 'UTC'})
-    scheduler.add_job(healthChecker, 'interval', seconds=10)
+    scheduler.add_job(healthChecker, 'interval', seconds=20, id='healthChecker')
     print('Press Ctrl+{0} to exit'.format('Break' if os.name == 'nt' else 'C'))
 
     try:
