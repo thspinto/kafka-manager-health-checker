@@ -57,7 +57,7 @@ def underReplicatedPartitionsCheck(topics, url, credentials):
     alertDict = { 'text': 'Under replicated topics!\n', 'sendAlert': False }
     underRepicatedTopics = []
     for topic in topics:
-        endpoint = url+topic+'/underReplicatedPartitions'
+        endpoint = url+'/'+topic+'/underReplicatedPartitions'
         r = requests.get(endpoint, auth=credentials)
         if(r.status_code != 200):
             LOGGER.error('Request ' + endpoint + ' failed with status '+ str (r.status_code))
@@ -74,7 +74,7 @@ def unavailablePartitionsCheck(topics, url, credentials):
     alertDict = { 'text': 'Unavailable topics!\n', 'sendAlert': False }
     unavailableTopics = []
     for topic in topics:
-     endpoint = url+topic+'/unavailablePartitions'
+     endpoint = url+'/'+topic+'/unavailablePartitions'
      r = requests.get(endpoint, auth=credentials)
      if(r.status_code != 200):
          LOGGER.error('Request ' + endpoint + ' failed with status '+ str (r.status_code))
