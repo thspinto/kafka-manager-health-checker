@@ -97,7 +97,7 @@ def sendAlert(alertText):
 
 if __name__ == '__main__':
     LOGGER = logging.getLogger(__name__)
-    scheduler = BlockingScheduler()
+    scheduler = BlockingScheduler({'apscheduler.timezone': 'UTC'})
     scheduler.add_job(healthChecker, 'interval', seconds=10)
     print('Press Ctrl+{0} to exit'.format('Break' if os.name == 'nt' else 'C'))
 
