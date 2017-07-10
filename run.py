@@ -43,9 +43,12 @@ class HealthChecker():
         LOGGER.info("Topics: " + str(topics))
         underReplicatedTopics = self.underReplicatedPartitionsCheck(topics)
         unavailableTopics = self.unavailablePartitionsCheck(topics)
+        consumerSummary = self.getConsumerSummary()
+        LOGGER.info("Consummers:" + str(consumerSummary))
+        laggingConsumers = self.laggingConsumer(consumerSummary)
 
-        alertText = liveBrokers['text'] + underReplicatedTopics['text'] + unavailableTopics['text']
-        send = liveBrokers['sendAlert'] or  underReplicatedTopics['sendAlert'] or unavailableTopics['sendAlert']
+        alertText = liveBrokers['text'] + underReplicatedTopics['text'] + unavailableTopics['text'] + laggingConsumers['text']
+        send = liveBrokers['sendAlert'] or  underReplicatedTopics['sendAlert'] or unavailableTopics['sendAlert'] or laggingConsumers['sendAlert']
         if(send):
             self.sendAlert(alertText)
             scheduler.reschedule_job('healthChecker', trigger='interval', seconds=300)
@@ -77,6 +80,29 @@ class HealthChecker():
         endpoint = self.url+'/topics'
         r = requests.get(endpoint, auth=self.credentials)
         return r.json()['topics']
+
+    def getConsumerSummary(self):
+        endpoint = self.url+'/consumersSummary'
+        r = requests.get(endpoint, auth=self.credentials)
+        return r.json()['consumers']
+
+    def laggingConsumer(self, consumerSummary):
+        alertDict={ 'text': 'Lagging Consumer!\n', 'sendAlert': False}
+        laggingConsumers = []
+        for consumer in consumerSummary:
+            for topic in consumer['topics']:
+                endpoint = self.url+'/'+consumer['name']+'/'+topic+'/'+consumer['type']+'/'+'topicSummary'
+                r = requests.get(endpoint, auth=self.credentials)
+                if(r.status_code != 200):
+                    LOGGER.error('Request ' + endpoint + ' failed with status '+ str (r.status_code))
+                    break
+                if(r.json()['totalLag'] > 20):
+                    laggingConsumers.append(consumer)
+                    alertDict['sendAlert'] = True
+
+        LOGGER.info("laggingConsumers: " + str(laggingConsumers))
+        alertDict['text'] += str(laggingConsumers) + '\n'
+        return alertDict
 
     def underReplicatedPartitionsCheck(self, topics):
         alertDict = { 'text': 'Under replicated topics!\n', 'sendAlert': False }
