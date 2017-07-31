@@ -6,6 +6,7 @@ from datetime import datetime
 import os
 from apscheduler.schedulers.background import BlockingScheduler
 from slackclient import SlackClient
+import pypd
 
 LOGGING_FORMAT = ('%(asctime)s - %(name)s - %(threadName)s - '
                   '%(levelname)s - %(message)s')
@@ -51,6 +52,8 @@ class HealthChecker():
         send = liveBrokers['sendAlert'] or  underReplicatedTopics['sendAlert'] or unavailableTopics['sendAlert'] or laggingConsumers['sendAlert']
         if(send):
             self.sendAlert(alertText)
+            if(!self.alerted):
+                self.pagerduty_publish(alertText)
             scheduler.reschedule_job('healthChecker', trigger='interval', seconds=300)
             self.alerted = True
         else:
@@ -146,6 +149,21 @@ class HealthChecker():
           channel=self.alertChannel,
           text=":fire: " + alertText
         )
+
+    def pagerduty_publish(self, message):
+        r = pypd.EventV2.create(data={
+            'routing_key': os.environ['SERVICE_KEY'],
+            'event_action': 'trigger',
+            'payload': {
+                'summary': os.environ['DESCRIPTION'],
+                'severity': 'warning',
+                'source': self.url,
+                'class': 'Kafka warning alert',
+                'custom_details': {
+                    'node_info': message
+                }
+            }
+        })
 
 if __name__ == '__main__':
     HealthChecker().start()
