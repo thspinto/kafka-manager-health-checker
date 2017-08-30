@@ -26,6 +26,7 @@ class HealthChecker():
         self.credentials = (os.getenv('USER'), os.getenv('PASSWORD'))
         self.url = os.getenv('URL')+'/api/status/5a-kafka'
         self.expectedBrokers = int(os.getenv('LIVE_BROKERS', '3'))
+        self.maxLag = int(os.getenv('MAX_LAG', '40'))
         self.alertChannel = os.getenv("SLACK_ALERT_CHANNEL")
         self.alerted = False
 
@@ -99,7 +100,7 @@ class HealthChecker():
                 if(r.status_code != 200):
                     LOGGER.error('Request ' + endpoint + ' failed with status '+ str (r.status_code))
                     break
-                if(r.json()['totalLag'] > 20):
+                if(r.json()['totalLag'] > self.maxLag):
                     laggingConsumers.append(consumer)
                     alertDict['sendAlert'] = True
 
