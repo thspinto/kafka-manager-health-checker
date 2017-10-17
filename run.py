@@ -22,6 +22,7 @@ class HealthChecker():
 
     def __init__(self):
         #Configs
+        self.excludeConsumers = os.getenv("EXCLUDED_CONSUMERS").split(",")
         self.slack_token = os.getenv("SLACK_API_TOKEN")
         self.credentials = (os.getenv('USER'), os.getenv('PASSWORD'))
         self.url = os.getenv('URL')+'/api/status/5a-kafka'
@@ -94,6 +95,9 @@ class HealthChecker():
         alertDict={ 'text': 'Lagging Consumer!\n', 'sendAlert': False}
         laggingConsumers = []
         for consumer in consumerSummary:
+            if consumer in self.excludeConsumers:
+                print("Ignoring consumer: " + consumer)
+                continue
             for topic in consumer['topics']:
                 endpoint = self.url+'/'+consumer['name']+'/'+topic+'/'+consumer['type']+'/'+'topicSummary'
                 r = requests.get(endpoint, auth=self.credentials)
