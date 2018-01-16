@@ -22,14 +22,15 @@ class HealthChecker():
 
     def __init__(self):
         #Configs
-        self.excludeConsumers = os.getenv("EXCLUDED_CONSUMERS").split(",")
-        self.slack_token = os.getenv("SLACK_API_TOKEN")
+        self.excludeConsumers = os.getenv('EXCLUDED_CONSUMERS', '').split(',')
+        self.slack_token = os.getenv('SLACK_API_TOKEN')
         self.credentials = (os.getenv('USER'), os.getenv('PASSWORD'))
-        self.url = os.getenv('URL')+'/api/status/5a-kafka'
+        self.url = os.getenv('URL', '')+'/api/status/5a-kafka'
         self.expectedBrokers = int(os.getenv('LIVE_BROKERS', '3'))
         self.maxLag = int(os.getenv('MAX_LAG', '40'))
-        self.alertChannel = os.getenv("SLACK_ALERT_CHANNEL")
+        self.alertChannel = os.getenv('SLACK_ALERT_CHANNEL')
         self.alerted = False
+        self.incidentKey = None
 
     def start(self):
         scheduler.add_job(self.check, 'interval', seconds=interval, id='healthChecker')
@@ -44,14 +45,12 @@ class HealthChecker():
         liveBrokers = self.liveBrokersCheck()
         topics = self.getTopics()
         LOGGER.info("Topics: " + str(topics))
-        underReplicatedTopics = self.underReplicatedPartitionsCheck(topics)
         unavailableTopics = self.unavailablePartitionsCheck(topics)
         consumerSummary = self.getConsumerSummary()
         LOGGER.info("Consummers:" + str(consumerSummary))
         laggingConsumers = self.laggingConsumer(consumerSummary)
 
-        alertText = liveBrokers['text'] + underReplicatedTopics['text'] + unavailableTopics['text'] + laggingConsumers['text']
-        send = liveBrokers['sendAlert'] or  underReplicatedTopics['sendAlert'] or unavailableTopics['sendAlert'] or laggingConsumers['sendAlert']
+        send, alertText = self.processAlert([liveBrokers, unavailableTopics, laggingConsumers])
         if(send):
             self.sendAlert(alertText)
             if(not self.alerted):
@@ -60,10 +59,20 @@ class HealthChecker():
             self.alerted = True
         else:
             if(self.alerted):
+                self.pagerduty_publish(alertText, 'resolve')
                 self.sendAlert('Back to normal :beauty:')
                 scheduler.reschedule_job('healthChecker', trigger='interval', seconds=interval)
+                self.incidentKey = None
                 self.alerted = False
 
+    def processAlert(self, alertDicts):
+        alertText = ''
+        sendAlert = False
+        for alert in alertDicts:
+            if alert['sendAlert']:
+                sendAlert = True
+                alertText += alert['text']
+        return sendAlert, alertText
 
     def liveBrokersCheck(self):
         alertDict = { 'text': '', 'sendAlert': False }
@@ -155,10 +164,11 @@ class HealthChecker():
           text=":fire: " + alertText
         )
 
-    def pagerduty_publish(self, message):
+    def pagerduty_publish(self, message, action='trigger'):
         r = pypd.EventV2.create(data={
             'routing_key': os.environ['SERVICE_KEY'],
-            'event_action': 'trigger',
+            'event_action': action,
+            'dedup_key': self.incidentKey,
             'payload': {
                 'summary': os.environ['DESCRIPTION'],
                 'severity': 'warning',
@@ -169,6 +179,8 @@ class HealthChecker():
                 }
             }
         })
+        LOGGER.info(r)
+        self.incidentKey = r['dedup_key']
 
 if __name__ == '__main__':
     HealthChecker().start()
